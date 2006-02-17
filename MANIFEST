@@ -1,0 +1,17 @@
+Build.PL
+Changes
+MANIFEST
+META.yml # Will be created by "make dist"
+Makefile.PL
+README
+lib/List/Maker.pm
+t/00.load.t
+t/error.t
+t/filter.t
+t/interp.t
+t/pod-coverage.t
+t/pod.t
+t/range.t
+t/range_by.t
+t/tri_range.t
+t/wordlist.t
