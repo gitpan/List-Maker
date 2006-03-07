@@ -1,6 +1,6 @@
 package List::Maker;
 
-use version; $VERSION = qv('0.0.2');
+use version; $VERSION = qv('0.0.3');
 
 use warnings;
 use strict;
@@ -20,14 +20,17 @@ no warnings 'redefine';
     my ($listspec) = @_;
 
     # If it doesn't match a special form, it's a < word list >...
-    return _qww($listspec) if $listspec !~ $AB_TO_Z && $listspec !~ $AZ_X_N;
+    return _qww($listspec)
+        if $listspec !~ $AB_TO_Z
+        && $listspec !~ $AZ_X_N;
 
     # Extract the range of values and any filter...
-    my ($from, $to, $incr, $filter) =  $2 eq ',' ? ($1, $4, $3-$1, $5)
-                                    :              ($1, $2, $3,    $4);
-    $incr = $from > $to ? -1 : 1 if !defined $incr;
+    my ($from, $to, $incr, $filter)
+        =  $2 eq ',' ? ($1, $4, $3-$1, $5)
+        :              ($1, $2, $3,    $4);
 
     # Check for nonsensical increments (zero or the wrong sign)...
+    $incr = $from > $to ? -1 : 1 if !defined $incr;
     my $delta = $to - $from;
     croak sprintf "Sequence <%s, %s, %s...> will never reach %s",
         $from, $from+$incr, $from+2*$incr, $to
@@ -66,7 +69,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.0.2
+This document describes List::Maker version 0.0.3
 
 
 =head1 SYNOPSIS

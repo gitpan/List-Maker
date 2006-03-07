@@ -1,18 +1,26 @@
-List::Maker version 0.0.2
+List::Maker version 0.0.3
 
-[ REPLACE THIS...
+    The List::Maker module hijacks Perl's built-in file globbing syntax
+    ("< *.pl >" and "glob '*.pl'") and retargets it at list creation.
 
-  The README is used to introduce the module and provide instructions on
-  how to install the module, any machine dependencies it may have (for
-  example C compilers and installed libraries) and any other information
-  that should be understood before the module is installed.
+    The rationale is simple: most people rarely if ever glob a set of
+    files, but they have to create lists in almost every program they
+    write. So the list construction syntax should be easier than the
+    file-name expansion syntax.
 
-  A README file is required for CPAN modules since CPAN extracts the
-  README file from a module distribution so that people browsing the
-  archive can use it get an idea of the modules uses. It is usually a
-  good idea to provide version information here so that people can
-  decide whether fixes for the module are worth downloading.
-]
+        use List::Maker;
+
+        @list = <1..10>;                      # (1,2,3,4,5,6,7,8,9,10)
+        @list = <10..1>;                      # (10,9,8,7,6,5,4,3,2,1)
+
+        @list = <1,3,..10>                    # (1,3,5,7,9)
+        @list = <1..10 x 2>                   # (1,3,5,7,9)
+
+        @list = <0..10 : prime N>;            # (2,3,5,7)
+        @list = <1,3,..30  : /7/>             # (7,17,27)
+
+        @words = < a list of words >;         # ('a', 'list', 'of', 'words')
+        @words = < 'a list' "of words" >;     # ('a list', 'of words')
 
 
 INSTALLATION
@@ -25,7 +33,8 @@ To install this module, run the following commands:
     make install
 
 
-Alternatively, to install with Module::Build, you can use the following commands:
+Alternatively, to install with Module::Build, you can use the
+following commands:
 
     perl Build.PL
     ./Build
