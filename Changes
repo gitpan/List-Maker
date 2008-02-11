@@ -11,4 +11,12 @@ Revision history for List-Maker
 
 0.0.3  Wed Mar  8 10:28:42 2006
 
-    Added missing README synopsis (thanks Colin)
+    * Added missing README synopsis (thanks Colin)
+
+
+0.0.4  Sat Feb  9 11:08:51 2008
+
+    * Made globbing magical only in those source files that explicitly load
+      the module (thanks Steffen)
+
+    * Documented <NdR>, <NrM>, and <^N> syntaxes

@@ -1,12 +1,13 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         List-Maker
-version:      v0.0.3
+version:      v0.0.4
 version_from: lib/List/Maker.pm
 installdirs:  site
 requires:
+    File::Glob:                    0
     Test::More:                    0
     version:                       0
 
 distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.17
+generated_by: ExtUtils::MakeMaker version 6.30

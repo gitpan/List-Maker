@@ -1,61 +1,239 @@
 package List::Maker;
 
-use version; $VERSION = qv('0.0.3');
+use version; $VERSION = qv('0.0.4');
 
 use warnings;
 use strict;
 use Carp;
+
+# Handle contextual returns
+sub _context {
+    # Return original list in list context...
+
+    return @_ if (caller 1)[5];
+
+    # Otherwise, Anglicize list...
+    return ""                   if @_ == 0;
+    return "$_[0]"              if @_ == 1;
+    return "$_[0] and $_[1]"    if @_ == 2;
+
+    my $sep = grep(/,/, @_) ? q{; } : q{, };
+    return join($sep, @_[0..@_-2]) . $sep . "and $_[-1]";
+}
 
 # Regexes to parse the acceptable list syntaxes...
 my $NUM    = qr{\s* [+-]? \d+ (?:\.\d*)? \s* }xms;
 my $TO     = qr{\s* \.\. \s*}xms;
 my $FILTER = qr{ (?: : (.*) )? }xms;
 
-my $AB_TO_Z  = qr{\A ($NUM) (,) ($NUM) ,? $TO ($NUM) $FILTER \Z}xms;
-my $AZ_X_N   = qr{\A ($NUM) $TO ($NUM) (?:x ($NUM))? $FILTER \Z}xms;
+my @handlers = (
+    # <1, 2 .. 10>
+    { pat => qr{\A ($NUM) , ($NUM) ,? $TO (\^?) ($NUM) $FILTER \Z}xms,
+      gen => sub{ _gen_range(
+                    {from=>$1, to=>$4, by=>$2-$1, filter=>$5, exto=>$3}
+                  );
+             },
+    },
+    
+    # <1 .. 10 by 2> 
+    { pat => qr{\A ($NUM) (\^?) $TO (\^?) ($NUM) (?:(?:x|by) ($NUM))? $FILTER \Z}xms,
+      gen => sub{ _gen_range(
+                    {from=>$1, to=>$4, by=>$5, filter=>$6, exfrom=>$2, exto=>$3}
+                  );
+             },
+    },
+    
+    # <^7 by 2> 
+    { pat => qr{\A \s* \^ ($NUM) \s* (?:(?:x|by) \s* ($NUM))? $FILTER \Z}xms,
+      gen => sub{ _gen_range(
+                    {from=>0, to=>$1, by=>$2, filter=>$3, exto=>1}
+                  );
+             },
+    },
+    
+    # <^@foo> 
+    { pat => qr{\A \s* \^ \s* ( (?:\S+\s+)* \S+) \s* \Z}xms,
+      gen => sub{ my @array = split /\s+/, $1;
+                  _gen_range( {from=>0, to=>@array-1});
+             },
+    },
+    
+    # MINrMAX random range notation
+    { pat => qr/^\s* ([+-]?\d+(?:[.]\d*)?|[.]\d+) \s* r \s* ([+-]?\d+(?:[.]\d*)?|[.]\d+) \s* $/xms,
+      gen => sub {
+        my ($min, $max) = ($1 < $2) ? ($1,$2) : ($2,$1);
+        return $min + rand($max - $min);
+      }
+    },
+
+    # NdS dice notation
+    { pat => qr/^\s* (\d+(?:[.]\d*)?|[.]\d+) \s* d \s* (\d+(?:[.]\d*)?|[.]\d+) \s* $/xms,
+      gen => sub {
+        my ($count, $sides) = ($1, $2);
+
+        # Non-integer counts require an extra random (partial) value...
+        if ($count =~ /[.]/) {
+            $count++;
+        }
+
+        # Generate random values...
+        my @rolls = $sides =~ /[.]/ ? map { rand $sides} 1..$count
+                  :                   map {1 + int rand $sides} 1..$count
+                  ;
+
+        # Handle a non-integer count by scaling final random (partial) value...
+        if ($count =~ /([.].*)/) {
+            my $fraction = $1;
+            $rolls[-1] *= $fraction;
+        }
+
+        return @rolls if wantarray;
+
+        use List::Util qw( sum );
+        return sum @rolls;
+      }
+    },
+
+    # Perl 6 xx operator on 'strings'...
+    { pat => qr/^ \s* ' ( [^']* ) ' \s* xx \s* (\d+) \s* $/xms,
+      gen => sub {
+        my ($string, $repetitions) = ($1, $2);
+        return ($string) x $repetitions;
+      }
+    },
+
+    # Perl 6 xx operator on "strings"...
+    { pat => qr/^ \s* " ( [^"]* ) " \s* xx \s* (\d+) \s* $/xms,
+      gen => sub {
+        my ($string, $repetitions) = ($1, $2);
+        return ($string) x $repetitions;
+      }
+    },
+
+    # Perl 6 xx operator on numbers...
+    { pat => qr/^ \s* ( [+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)? ) \s* xx \s* (\d+) \s* $/xms,
+      gen => sub {
+        my ($number, $repetitions) = ($1, $2);
+        return (0+$number) x $repetitions;
+      }
+    },
+);
+
+my %caller_expecting_special_behaviour;
+my @user_handlers;
+
+# This does the magic...
+my $list_maker_sub = sub {
+    my ($listspec) = @_;
+
+    # If it doesn't match a special form, it's a < word list >...
+    for my $handler (@user_handlers, @handlers) {
+        next if $listspec !~ m{$handler->{pat}}xms;
+        return $handler->{gen}();
+    }
+
+    return _context _qww($listspec);
+};
+
+sub import {
+    shift; # Don't need package name
+
+    # Explicit export requested
+    if (@_) {
+        my $caller = caller;
+        for my $name (@_) {
+            no strict 'refs';
+            *{$caller.'::'.$name} = $list_maker_sub;
+        }
+    }
+    else {
+        my ($package, $file) = caller;
+        $caller_expecting_special_behaviour{ $package, $file } = 1;
+    }
+}
+
+sub add_handler {
+    while (my ($regex, $sub) = splice @_, 0, 2) {
+        croak "Usage: List::Make::add_handler(qr/.../, sub{...})\nError"
+            if ref($regex) ne 'Regexp' || ref($sub) ne 'CODE';
+        push @user_handlers, { pat=>$regex, gen=>$sub };
+    }
+    return;
+}
+
 
 no warnings 'redefine';
 *CORE::GLOBAL::glob = sub
 {
-    my ($listspec) = @_;
+    # Don't be magical in those files that haven't loaded the module...
+    my ($package, $file) = caller;
+    if (!$caller_expecting_special_behaviour{$package, $file}) {
+        use File::Glob;
+        goto &File::Glob::bsd_glob
+    }
+    else {
+        goto &{$list_maker_sub};
+    }
+};
 
-    # If it doesn't match a special form, it's a < word list >...
-    return _qww($listspec)
-        if $listspec !~ $AB_TO_Z
-        && $listspec !~ $AZ_X_N;
+sub _gen_range {
+    my ($from, $to, $incr, $filter, $exfrom, $exto)
+        = @{shift()}{ qw<from to by filter exfrom exto> };
 
-    # Extract the range of values and any filter...
-    my ($from, $to, $incr, $filter)
-        =  $2 eq ',' ? ($1, $4, $3-$1, $5)
-        :              ($1, $2, $3,    $4);
+    s/^ \s+ | \s+ $//gxms for $from, $to;
+
+    if (!defined $incr) {
+        $incr = -($from <=> $to);
+    }
 
     # Check for nonsensical increments (zero or the wrong sign)...
-    $incr = $from > $to ? -1 : 1 if !defined $incr;
     my $delta = $to - $from;
     croak sprintf "Sequence <%s, %s, %s...> will never reach %s",
         $from, $from+$incr, $from+2*$incr, $to
             if $incr == 0 && $from != $to || $delta * $incr < 0;
 
-    # Generate list of values (and return it, if not filter)...
-    my @vals = $incr ? map { $from + $incr * $_ } 0..($delta/$incr) : $from;
-    return @vals if !defined $filter;
+    # Generate unfiltered list of values...
+    $from += $incr if $exfrom;
+    my @vals;
+    if ($incr==0) {
+        @vals = $exto || $exfrom ? () : $from;
+    }
+    elsif ($incr>0) {
+        while (1) {
+            last if  $exto && ($from >= $to || $from eq $to) 
+                 || !$exto && $from > $to;
+            push @vals, $from;
+            $from += $incr;
+        }
+    }
+    elsif ($incr<0) {
+        while (1) {
+            last if  $exto && ($from <= $to || $from eq $to) 
+                 || !$exto && $from < $to;
+            push @vals, $from;
+            $from += $incr;
+        }
+    }
 
-    # Apply the filter before returning the values...
-    $filter =~ s/\b[A-Z]\b/\$_/g;
-    my $caller = caller;
-    return eval "grep {package $caller; $filter } \@vals";
+    # Apply any filter before returning the values...
+    if (defined $filter) {
+        (my $trans_filter = $filter) =~ s/\b[A-Z]\b/\$_/g;
+        @vals = eval "grep {package ".caller(2)."; $trans_filter } \@vals";
+        croak "Bad filter ($filter): $@" if $@;
+    }
+
+    return @vals;
 };
 
 sub _qww {
     my ($content) = @_;
 
     # Break into words (or "w o r d s" or 'w o r d s') and strip quoters...
-    return map { s/\A(["'])(.*)\1\z/$2/xms; $_; }
-                $content =~ m{ ( " [^\\"]* (?:\\. [^\\"]*)* "
-                               | ' [^\\']* (?:\\. [^\\']*)* '
-                               | \S+
-                               )
-                             }gxms;
+    return map { !defined($_) ? () : $_ }
+                    $content =~ m{ " ( [^\\"]* (?:\\. [^\\"]*)* ) "
+                                 | ' ( [^\\']* (?:\\. [^\\']*)* ) '
+                                 |   ( \S+                      )
+                                 }gxms;
 }
 
 
@@ -69,7 +247,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.0.3
+This document describes List::Maker version 0.0.4
 
 
 =head1 SYNOPSIS
@@ -80,16 +258,29 @@ This document describes List::Maker version 0.0.3
 
     @list = <10..1>;                      # (10,9,8,7,6,5,4,3,2,1)
 
-    @list = <1,3,..10>                    # (1,3,5,7,9)
-    @list = <1..10 x 2>                   # (1,3,5,7,9)
+    @list = <1,3,..10>;                   # (1,3,5,7,9)
+    @list = <1..10 x 2>;                  # (1,3,5,7,9)
   
     @list = <0..10 : prime N>;            # (2,3,5,7)
-    @list = <1,3,..30  : /7/>             # (7,17,27)
+    @list = <1,3,..30  : /7/>;            # (7,17,27)
+
+    @list = < ^10 >;                      # (0,1,2,3,4,5,6,7,8,9)
+    @list = < ^@array >;                  # (0..$#array)
 
     @words = < a list of words >;         # ('a', 'list', 'of', 'words')
     @words = < 'a list' "of words" >;     # ('a list', 'of words')
 
-  
+
+    use List::Maker 'listify';
+    @list = listify '1..10';              # (1,2,3,4,5,6,7,8,9,10)
+
+    use List::Maker 'make_list';
+    @list = make_list '10..1';            # (10,9,8,7,6,5,4,3,2,1)
+
+    use List::Maker 'ql';
+    @list = ql'1..10 x 2';                # (1,3,5,7,9)
+
+
 =head1 DESCRIPTION
 
 The List::Maker module hijacks Perl's built-in file globbing syntax (C<< <
@@ -99,20 +290,28 @@ The rationale is simple: most people rarely if ever glob a set of files,
 but they have to create lists in almost every program they write. So the
 list construction syntax should be easier than the filename expansion syntax.
 
+Alternatively, you can load the module with an explicit name, and it creates a
+subroutine of that name that builds the same kinds of lists for you (leaving
+the globbing mechanism unaltered).
+
 =head1 INTERFACE 
 
-Once the module has been loaded, angle brackets no longer expand a shell
-pattern into a list of files. Instead, they expand a list specification
-into a list of values.
+Within any file in which the module has been explicitly loaded:
+
+    use List::Maker;
+    
+angle brackets no longer expand a shell pattern into a list of files.
+Instead, they expand a list specification into a list of values.
 
 =head2 Numeric lists
 
-Numeric list specifications may take any of the following 4 forms:
+Numeric list specifications may take any of the following forms:
 
     Type           Syntax                  For example     Produces
     ==========     ===================     ===========     ===========
     Count up       <MIN..MAX>              <1..5>          (1,2,3,4,5)
     Count down     <MAX..MIN>              <5..1>          (5,4,3,2,1)
+    Count to       < ^LIMIT >              < ^5 >          (0,1,2,3,4)
     Count by       <START..END x STEP>     <1..10 x 3>     (1,4,7,10)
     Count via      <START, NEXT,..END>     <1, 3,..10>     (1,3,5,7,9)
 
@@ -125,14 +324,14 @@ The numbers don't have to be integers either:
 
 =head2 Filtered numeric lists
 
-Any of the four styles of numeric list may also have a filter applied to it,
-by appending a colon, followed by a boolean expression:
+Any of the various styles of numeric list may also have a filter applied
+to it, by appending a colon, followed by a boolean expression:
 
     @odds   = <1..100 : \$_ % 2 != 0 >;
 
     @primes = <3,5..99> : is_prime(\$_) >;
 
-    @available = <1..$max : !allocated{\$_} >
+    @available = < ^$max : !allocated{\$_} >
 
     @ends_in_7 = <1..1000 : /7$/ >
 
@@ -151,7 +350,7 @@ previous examples could also be written:
 
     @primes = <3,5..99> : is_prime(N) >;
 
-    @available = <1..$max : !allocated{N} >
+    @available = < ^$max : !allocated{N} >
 
 or (since the specific letter is irrelevant):
 
@@ -159,7 +358,7 @@ or (since the specific letter is irrelevant):
 
     @primes = <3,5..99> : is_prime(I) >;
 
-    @available = <1..$max : !allocated{T} >
+    @available = < ^$max : !allocated{T} >
 
 
 =head2 String lists
@@ -189,6 +388,95 @@ overall list still interpolates in that case:
     @names = <Tom Dick '$Harry{Potter}'>;   
                         # same as: ( 'Tom', 'Dick', "$Harry{Potter}" )
 
+In a scalar context, any string list is converted to the standard
+English representation:
+
+    $names = <Tom>;                       # 'Tom'
+    $names = <Tom Dick>;                  # 'Tom and Dick'
+    $names = <Tom Dick 'Harry Potter'>;   # 'Tom, Dick, and Harry Potter'
+
+
+=head2 Perl 6 repetition list operator
+
+List::Maker also understands the Perl 6 C<xx> listification operator:
+
+    @affirmations = <'aye' xx 5>;         # ('aye','aye','aye','aye','aye')
+
+
+=head2 Random number generation
+
+The module understands two syntaxes for generating random numbers. It can
+generate a random number within a range:
+
+    $random = < 2r5.5 >;     # 2 <= Random number < 5.5
+
+
+It can also generate an "NdS" dice roll (i.e. the sum of rolling N dice, each
+with S sides):
+
+    $roll = < 3d12 >;        # Sum of three 12-sided dice
+
+The dice notation cares nothing for the laws of physics or rationality
+and so it will even allow you to specify a non-integer number of
+"fractal dice", each with an non-integer numbers of sides:
+
+    $roll = < 3.7d12.3 >;    # Sum of three-point-seven 12.3-sided dice
+
+In a list context, the dice notation returns the results of each of the
+individual die rolls (including the partial result of a "fractal" roll)
+
+    @rolls = < 3d12 >;       # (6, 5, 12)
+    @rolls = < 3.7d12.3 >;   # (6.1256, 5.9876, 12.0012, 0.3768)
+
+The values returned in list context will always add up to the value that would
+have been returned in a scalar context.
+
+
+=head2 User-defined syntax via C<add_handler>
+
+You can add new syntax variations to the C<< <...> >> format using the
+C<add_handler()> function:
+
+    add_handler($pattern => $sub_ref, $pattern => $sub_ref...);
+
+Each pattern is added to the list of syntax checkers and, if it
+matches, the corresponding subroutine is called to furnish the result
+of the C<< <...> >>. User-defined handlers are tested in the same order
+that they are defined, but I<before> the standard built-in formats
+described above.
+
+
+=head1 ALTERNATE INTERFACE 
+
+If an argument is passed to the C<use List::Maker> statement, then that
+argument is used as the name of a subroutine to be installed in the current
+package. That subroutine then expects a single argument, which may be used to
+generate any of the lists described above.
+
+In other words, passing an argument to C<use List::Maker> creates an explicit
+list-making subroutine, rather than hijacking the built-in C<< <..> >> and
+C<glob()>.
+
+For example:
+
+    use List::Maker 'range';
+
+    for (range '1..100 x 5') {
+        print "$_: $result{$_}\n";
+    }
+
+
+    use List::Maker 'roll';
+
+    if (roll '3d12' > 20) {
+        print "The $creature hits you\n";
+    }
+
+
+    use List::Maker 'conjoin';
+
+    print conjoin @names;
+
 
 =head1 DIAGNOSTICS
 
@@ -214,17 +502,34 @@ None.
 
 =head1 INCOMPATIBILITIES
 
-Using this module prevents you from using C<< <...> >> or C<glob()> to expand
-file lists. You would need to use the C<File::Glob> module directly:
+Using this module normally prevents you from using the built-in
+behaviours of C<< <...> >> or C<glob()> in any files that directly
+C<use> the module (though files that don't load the module are
+unaffected). In files that use the module, you would need to use the
+C<File::Glob> module directly:
 
     use File::Glob;
 
     my @files = bsd_glob("*.pl");
 
+Alternatively, export the list maker by name (see L<"ALTERNATE INTERFACE">).
+
 
 =head1 BUGS AND LIMITATIONS
 
-No bugs have been reported.
+The lists generated are not lazy. So this:
+
+    for (<1..10000000>) {
+        ...
+    }
+
+will be vastly slower than:
+
+    for (1..10000000) {
+        ...
+    }
+
+
 
 Please report any bugs or feature requests to
 C<bug-list-maker@rt.cpan.org>, or through the web interface at
