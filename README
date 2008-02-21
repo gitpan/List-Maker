@@ -1,4 +1,4 @@
-List::Maker version 0.0.4
+List::Maker version 0.0.5
 
     The List::Maker module hijacks Perl's built-in file globbing syntax
     ("< *.pl >" and "glob '*.pl'") and retargets it at list creation.

@@ -20,3 +20,8 @@ Revision history for List-Maker
       the module (thanks Steffen)
 
     * Documented <NdR>, <NrM>, and <^N> syntaxes
+
+
+0.0.5  Wed Feb 20 15:14:40 2008
+
+    * Added in missing test module

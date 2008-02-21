@@ -1,6 +1,6 @@
 package List::Maker;
 
-use version; $VERSION = qv('0.0.4');
+use version; $VERSION = qv('0.0.5');
 
 use warnings;
 use strict;
@@ -247,7 +247,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.0.4
+This document describes List::Maker version 0.0.5
 
 
 =head1 SYNOPSIS

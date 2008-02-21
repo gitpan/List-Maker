@@ -5,6 +5,7 @@ META.yml # Will be created by "make dist"
 Makefile.PL
 README
 lib/List/Maker.pm
+lib/List/Maker/OtherModule.pm
 t/00.load.t
 t/error.t
 t/filter.t
