@@ -1,6 +1,6 @@
 package List::Maker;
 
-use version; $VERSION = qv('0.0.5');
+our $VERSION = '0.001_000';
 
 use warnings;
 use strict;
@@ -138,6 +138,8 @@ my $list_maker_sub = sub {
 sub import {
     shift; # Don't need package name
 
+    $^H{'List::Maker::is_active'} = 1;
+
     # Explicit export requested
     if (@_) {
         my $caller = caller;
@@ -166,8 +168,12 @@ no warnings 'redefine';
 *CORE::GLOBAL::glob = sub
 {
     # Don't be magical in those files that haven't loaded the module...
-    my ($package, $file) = caller;
-    if (!$caller_expecting_special_behaviour{$package, $file}) {
+    my ($package, $file, $scope_ref) = (caller 0)[0,1,10];
+
+    # Check for lexical scoping (only works in 5.10 and later)...
+    my $in_scope = $] < 5.010 || $scope_ref && (caller 0)[10]->{'List::Maker::is_active'};
+
+    if (!$caller_expecting_special_behaviour{$package, $file} || !$in_scope ) {
         use File::Glob;
         goto &File::Glob::bsd_glob
     }
@@ -247,7 +253,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.0.5
+This document describes List::Maker version 0.001_000
 
 
 =head1 SYNOPSIS
@@ -299,9 +305,26 @@ the globbing mechanism unaltered).
 Within any file in which the module has been explicitly loaded:
 
     use List::Maker;
-    
+
 angle brackets no longer expand a shell pattern into a list of files.
 Instead, they expand a list specification into a list of values.
+
+Under Perl 5.10 and later the module is also lexically scoped in its
+effects. That is, under Perls that support it, the change in the
+behaviour of angle brackets is confined to the specific
+lexical scope into which the module was imported.
+
+This means:
+
+    # Code                  Under 5.8 or earlier    Under 5.10 or later
+    ====================    ====================    ===================
+    @list = <1..10>;        generates list          normal glob()
+    {
+        use List::Maker;    installs in file        installs in block
+        @list = <1..10>;    generates list          generates list
+    }
+    @list = <1..10>;        generates list          normal glob()
+
 
 =head2 Numeric lists
 
@@ -320,7 +343,7 @@ The numbers don't have to be integers either:
     @scores = <0.5..4.5>;      # same as: (0.5, 1.5, 2.5, 3.5, 4.5)
 
     @steps = <1..0 x -0.2>;    # same as: (1, 0.8, 0.6, 0.4, 0.2, 0)
-    
+
 
 =head2 Filtered numeric lists
 
@@ -475,7 +498,7 @@ For example:
 
     use List::Maker 'conjoin';
 
-    print conjoin @names;
+    print scalar conjoin @names;
 
 
 =head1 DIAGNOSTICS

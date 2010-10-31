@@ -23,3 +23,4 @@ t/rand_range.t
 t/unary_range.t
 t/user_defined.t
 t/xx.t
+t/scoped.t

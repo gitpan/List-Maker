@@ -25,3 +25,10 @@ Revision history for List-Maker
 0.0.5  Wed Feb 20 15:14:40 2008
 
     * Added in missing test module
+
+
+0.001_000  Sun Oct 31 08:24:33 2010
+
+    * Fixed a POD nit in the "conjoin" example
+
+    * Made module lexically scoped under 5.10 and later
