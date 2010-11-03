@@ -1,7 +1,6 @@
 Build.PL
 Changes
 MANIFEST
-META.yml # Will be created by "make dist"
 Makefile.PL
 README
 lib/List/Maker.pm
@@ -24,3 +23,6 @@ t/unary_range.t
 t/user_defined.t
 t/xx.t
 t/scoped.t
+t/pick.t
+t/roll.t
+META.yml                                 Module meta-data (added by MakeMaker)

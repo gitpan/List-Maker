@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                List-Maker
-version:             0.001_000
+version:             0.002_000
 abstract:            Generate more sophisticated lists than just ..
 license:             ~
 author:              

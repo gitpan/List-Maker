@@ -32,3 +32,8 @@ Revision history for List-Maker
     * Fixed a POD nit in the "conjoin" example
 
     * Made module lexically scoped under 5.10 and later
+
+
+0.002_000  Thu Nov  4 06:27:15 2010
+
+    * Added :pick and :roll post-selectors

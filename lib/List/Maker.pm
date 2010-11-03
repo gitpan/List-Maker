@@ -1,10 +1,11 @@
 package List::Maker;
 
-our $VERSION = '0.001_000';
+our $VERSION = '0.002_000';
 
 use warnings;
 use strict;
 use Carp;
+use List::Util qw<shuffle sum>;
 
 # Handle contextual returns
 sub _context {
@@ -21,43 +22,66 @@ sub _context {
     return join($sep, @_[0..@_-2]) . $sep . "and $_[-1]";
 }
 
+my %selector_sub = (
+    pick => sub {
+        return (shuffle @_)[0..shift()-1]
+    },
+
+    roll => sub {
+        return map { $_[rand @_] } 1..shift;
+    },
+
+    all => sub {
+        shift; return @_;
+    },
+);
+
 # Regexes to parse the acceptable list syntaxes...
-my $NUM    = qr{\s* [+-]? \d+ (?:\.\d*)? \s* }xms;
-my $TO     = qr{\s* \.\. \s*}xms;
-my $FILTER = qr{ (?: : (.*) )? }xms;
+my $NUM      = qr{\s* [+-]? \d+ (?:\.\d*)? \s* }xms;
+my $TO       = qr{\s* \.\. \s*}xms;
+my $FILTER   = qr{ (?: : (?! \s* (?:pick|roll)) (.*?) )? }xms;
+my $SELECTOR = qr{ (?: : \s* (pick|roll) \s* (\d*) )? \s* }xms;
 
 my @handlers = (
     # <1, 2 .. 10>
-    { pat => qr{\A ($NUM) , ($NUM) ,? $TO (\^?) ($NUM) $FILTER \Z}xms,
-      gen => sub{ _gen_range(
-                    {from=>$1, to=>$4, by=>$2-$1, filter=>$5, exto=>$3}
-                  );
+    { pat => qr{\A ($NUM) , ($NUM) ,? $TO (\^?) ($NUM) $FILTER $SELECTOR \Z}xms,
+      gen => sub{ _gen_range({
+                    from=>$1, to=>$4, by=>$2-$1, exto=>$3,
+                    filter=>$5, selector => $6, count => $7,
+                  })
              },
     },
-    
-    # <1 .. 10 by 2> 
-    { pat => qr{\A ($NUM) (\^?) $TO (\^?) ($NUM) (?:(?:x|by) ($NUM))? $FILTER \Z}xms,
-      gen => sub{ _gen_range(
-                    {from=>$1, to=>$4, by=>$5, filter=>$6, exfrom=>$2, exto=>$3}
-                  );
+
+    # <1 .. 10 by 2>
+    { pat => qr{\A ($NUM) (\^?) $TO (\^?) ($NUM) (?:(?:x|by) ($NUM))? $FILTER $SELECTOR \Z}xms,
+      gen => sub{ _gen_range({
+                    from=>$1, to=>$4, by=>$5, exfrom=>$2, exto=>$3,
+                    filter=>$6, selector => $7, count => $8,
+                  });
              },
     },
-    
-    # <^7 by 2> 
-    { pat => qr{\A \s* \^ ($NUM) \s* (?:(?:x|by) \s* ($NUM))? $FILTER \Z}xms,
-      gen => sub{ _gen_range(
-                    {from=>0, to=>$1, by=>$2, filter=>$3, exto=>1}
-                  );
+
+    # <^7 by 2>
+    { pat => qr{\A \s* \^ ($NUM) \s* (?:(?:x|by) \s* ($NUM))? $FILTER $SELECTOR \Z}xms,
+      gen => sub{ _gen_range({
+                    from=>0, to=>$1, by=>$2, exto=>1,
+                    filter=>$3, selector => $4, count => $5,
+                  });
              },
     },
-    
-    # <^@foo> 
+
+    # <^@foo>
     { pat => qr{\A \s* \^ \s* ( (?:\S+\s+)* \S+) \s* \Z}xms,
-      gen => sub{ my @array = split /\s+/, $1;
-                  _gen_range( {from=>0, to=>@array-1});
+      gen => sub{
+                my $specification = $1;
+                $specification =~ s{$SELECTOR \Z}{}x;
+                my ($selector, $count) = ($selector_sub{$1||'all'}, $2||1);
+
+                my @array = split /\s+/, $specification;
+                $selector->($count, _gen_range( {from=>0, to=>@array-1}));
              },
     },
-    
+
     # MINrMAX random range notation
     { pat => qr/^\s* ([+-]?\d+(?:[.]\d*)?|[.]\d+) \s* r \s* ([+-]?\d+(?:[.]\d*)?|[.]\d+) \s* $/xms,
       gen => sub {
@@ -88,8 +112,6 @@ my @handlers = (
         }
 
         return @rolls if wantarray;
-
-        use List::Util qw( sum );
         return sum @rolls;
       }
     },
@@ -128,7 +150,7 @@ my $list_maker_sub = sub {
 
     # If it doesn't match a special form, it's a < word list >...
     for my $handler (@user_handlers, @handlers) {
-        next if $listspec !~ m{$handler->{pat}}xms;
+        next if $listspec !~ m{$handler->{pat} }xms;
         return $handler->{gen}();
     }
 
@@ -183,14 +205,16 @@ no warnings 'redefine';
 };
 
 sub _gen_range {
-    my ($from, $to, $incr, $filter, $exfrom, $exto)
-        = @{shift()}{ qw<from to by filter exfrom exto> };
+    my ($from, $to, $incr, $filter, $exfrom, $exto, $selector, $count)
+        = @{shift()}{ qw<from to by filter exfrom exto selector count> };
 
     s/^ \s+ | \s+ $//gxms for $from, $to;
 
     if (!defined $incr) {
         $incr = -($from <=> $to);
     }
+
+    $count ||= 1;
 
     # Check for nonsensical increments (zero or the wrong sign)...
     my $delta = $to - $from;
@@ -206,7 +230,7 @@ sub _gen_range {
     }
     elsif ($incr>0) {
         while (1) {
-            last if  $exto && ($from >= $to || $from eq $to) 
+            last if  $exto && ($from >= $to || $from eq $to)
                  || !$exto && $from > $to;
             push @vals, $from;
             $from += $incr;
@@ -214,7 +238,7 @@ sub _gen_range {
     }
     elsif ($incr<0) {
         while (1) {
-            last if  $exto && ($from <= $to || $from eq $to) 
+            last if  $exto && ($from <= $to || $from eq $to)
                  || !$exto && $from < $to;
             push @vals, $from;
             $from += $incr;
@@ -228,18 +252,29 @@ sub _gen_range {
         croak "Bad filter ($filter): $@" if $@;
     }
 
+    # Apply any selector before returning values...
+    if (defined $selector) {
+        @vals = $selector_sub{$selector}->($count, @vals);
+    }
+
     return @vals;
 };
 
 sub _qww {
     my ($content) = @_;
 
+    # Strip any filter...
+    $content =~ s{$SELECTOR \Z}{}x;
+    my ($selector, $count) = ($selector_sub{$1||'all'}, $2||1);
+
     # Break into words (or "w o r d s" or 'w o r d s') and strip quoters...
-    return map { !defined($_) ? () : $_ }
+    return $selector->( $count,
+            grep { defined($_) }
                     $content =~ m{ " ( [^\\"]* (?:\\. [^\\"]*)* ) "
                                  | ' ( [^\\']* (?:\\. [^\\']*)* ) '
                                  |   ( \S+                      )
-                                 }gxms;
+                                 }gxms
+    );
 }
 
 
@@ -253,7 +288,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.001_000
+This document describes List::Maker version 0.002_000
 
 
 =head1 SYNOPSIS
@@ -266,7 +301,7 @@ This document describes List::Maker version 0.001_000
 
     @list = <1,3,..10>;                   # (1,3,5,7,9)
     @list = <1..10 x 2>;                  # (1,3,5,7,9)
-  
+
     @list = <0..10 : prime N>;            # (2,3,5,7)
     @list = <1,3,..30  : /7/>;            # (7,17,27)
 
@@ -300,7 +335,7 @@ Alternatively, you can load the module with an explicit name, and it creates a
 subroutine of that name that builds the same kinds of lists for you (leaving
 the globbing mechanism unaltered).
 
-=head1 INTERFACE 
+=head1 INTERFACE
 
 Within any file in which the module has been explicitly loaded:
 
@@ -384,6 +419,41 @@ or (since the specific letter is irrelevant):
     @available = < ^$max : !allocated{T} >
 
 
+=head2 Randomly selecting from lists
+
+In addition to (or instead of) specifying a filter on a list,
+you can also select a specific number of the list's items
+at random, by appending C<:pick> I<N> to the list specification.
+
+For example:
+
+    $N_random_percentages = <0..100 : pick $N >;
+
+    @any_three_primes = <3,5..99> : is_prime(I) : pick 3>;
+
+    $one_available = < ^$max : !allocated{T} :pick>
+
+The requested number of elements are picked at random, and without
+replacement. If the number of elements to be picked is omitted,
+a single element is randomly picked.
+
+You can also pick I<with> replacement (which is equivalent to rolling
+some number of M-sided dice, with one list element on each face), by
+using C<:roll> instead of C<:pick>:
+
+    $N_nonunique_random_percentages = <0..100 : roll $N >;
+
+    @three_nonunique_primes = <3,5..99> : is_prime(I) : roll 3>;
+
+    $one_available = < ^$max : !allocated{T} :roll>
+
+If the number of elements to be rolled is omitted, a single element is
+randomly rolled (which is exactly the same as randomly picking it).
+
+Note that, because each requested "roll" is independent, it's entirely
+possible for one or more values to be selected repeatedly.
+
+
 =head2 String lists
 
 Any list specification that doesn't conform to one of the four pattern
@@ -402,13 +472,13 @@ listification):
 More interestingly, the words in these lists can be quoted to change the
 default whitespace separation. For example:
 
-    @names = <Tom Dick "Harry Potter">;   
+    @names = <Tom Dick "Harry Potter">;
                         # same as: ( 'Tom', 'Dick', 'Harry Potter' )
-    
+
 Single quotes may be also used, but this may be misleading, since the
 overall list still interpolates in that case:
 
-    @names = <Tom Dick '$Harry{Potter}'>;   
+    @names = <Tom Dick '$Harry{Potter}'>;
                         # same as: ( 'Tom', 'Dick', "$Harry{Potter}" )
 
 In a scalar context, any string list is converted to the standard
@@ -469,7 +539,7 @@ that they are defined, but I<before> the standard built-in formats
 described above.
 
 
-=head1 ALTERNATE INTERFACE 
+=head1 ALTERNATE INTERFACE
 
 If an argument is passed to the C<use List::Maker> statement, then that
 argument is used as the name of a subroutine to be installed in the current
