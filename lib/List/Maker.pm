@@ -1,6 +1,6 @@
 package List::Maker;
 
-our $VERSION = '0.002_000';
+our $VERSION = '0.003_000';
 
 use warnings;
 use strict;
@@ -22,6 +22,7 @@ sub _context {
     return join($sep, @_[0..@_-2]) . $sep . "and $_[-1]";
 }
 
+# General filters that can be applied...
 my %selector_sub = (
     pick => sub {
         return (shuffle @_)[0..shift()-1]
@@ -42,6 +43,7 @@ my $TO       = qr{\s* \.\. \s*}xms;
 my $FILTER   = qr{ (?: : (?! \s* (?:pick|roll)) (.*?) )? }xms;
 my $SELECTOR = qr{ (?: : \s* (pick|roll) \s* (\d*) )? \s* }xms;
 
+# Mappings from specifications to handlers...
 my @handlers = (
     # <1, 2 .. 10>
     { pat => qr{\A ($NUM) , ($NUM) ,? $TO (\^?) ($NUM) $FILTER $SELECTOR \Z}xms,
@@ -159,23 +161,32 @@ my $list_maker_sub = sub {
 
 sub import {
     shift; # Don't need package name
+    my $caller = caller;
 
+    # Note lexical scope of import...
     $^H{'List::Maker::is_active'} = 1;
 
-    # Explicit export requested
+    # Explicit export(s) requested...
     if (@_) {
-        my $caller = caller;
         for my $name (@_) {
             no strict 'refs';
             *{$caller.'::'.$name} = $list_maker_sub;
         }
     }
+
+    # Otherwise use 'glob' (to provide magic behaviour as well)...
     else {
         my ($package, $file) = caller;
+
+        # Get as close to lexical behavior as per-5.10 will allow...
         $caller_expecting_special_behaviour{ $package, $file } = 1;
+
+        no strict 'refs';
+        *{$caller.'::glob'} = \&_glob_replacement;
     }
 }
 
+# Users can add their own handlers...
 sub add_handler {
     while (my ($regex, $sub) = splice @_, 0, 2) {
         croak "Usage: List::Make::add_handler(qr/.../, sub{...})\nError"
@@ -187,33 +198,43 @@ sub add_handler {
 
 
 no warnings 'redefine';
-*CORE::GLOBAL::glob = sub
-{
+sub _glob_replacement {
     # Don't be magical in those files that haven't loaded the module...
     my ($package, $file, $scope_ref) = (caller 0)[0,1,10];
 
     # Check for lexical scoping (only works in 5.10 and later)...
     my $in_scope = $] < 5.010 || $scope_ref && (caller 0)[10]->{'List::Maker::is_active'};
 
+    # If not being magical...
     if (!$caller_expecting_special_behaviour{$package, $file} || !$in_scope ) {
+        # Use any overloaded version of glob...
+        goto &CORE::GLOBAL::glob if exists &CORE::GLOBAL::glob;
+
+        # Otherwise, use the core glob behaviour...
         use File::Glob;
-        goto &File::Glob::bsd_glob
+        goto &File::Glob::csh_glob;
     }
+
+    # Otherwise, be magical...
     else {
         goto &{$list_maker_sub};
     }
 };
 
+# Generate a range of values, selected or filtered as appropriate...
 sub _gen_range {
     my ($from, $to, $incr, $filter, $exfrom, $exto, $selector, $count)
         = @{shift()}{ qw<from to by filter exfrom exto selector count> };
 
+    # Trim leading and trailing whitespace from endpoints...
     s/^ \s+ | \s+ $//gxms for $from, $to;
 
+    # Default increment is +/- 1, depending on end-points...
     if (!defined $incr) {
         $incr = -($from <=> $to);
     }
 
+    # Default count is 1...
     $count ||= 1;
 
     # Check for nonsensical increments (zero or the wrong sign)...
@@ -225,9 +246,12 @@ sub _gen_range {
     # Generate unfiltered list of values...
     $from += $incr if $exfrom;
     my @vals;
+    # <N..N>
     if ($incr==0) {
         @vals = $exto || $exfrom ? () : $from;
     }
+
+    # <M..N>
     elsif ($incr>0) {
         while (1) {
             last if  $exto && ($from >= $to || $from eq $to)
@@ -236,6 +260,8 @@ sub _gen_range {
             $from += $incr;
         }
     }
+
+    # <N..M>
     elsif ($incr<0) {
         while (1) {
             last if  $exto && ($from <= $to || $from eq $to)
@@ -260,6 +286,7 @@ sub _gen_range {
     return @vals;
 };
 
+# Simulate a Perl 6 <<...>> construct...
 sub _qww {
     my ($content) = @_;
 
@@ -288,7 +315,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.002_000
+This document describes List::Maker version 0.003_000
 
 
 =head1 SYNOPSIS
@@ -324,8 +351,8 @@ This document describes List::Maker version 0.002_000
 
 =head1 DESCRIPTION
 
-The List::Maker module hijacks Perl's built-in file globbing syntax (C<< <
-*.pl > >> and C<glob '*.pl'>) and retargets it at list creation.
+The List::Maker module hijacks Perl's built-in file globbing syntax
+(C<< < *.pl > >> and C<glob '*.pl'>) and retargets it at list creation.
 
 The rationale is simple: most people rarely if ever glob a set of files,
 but they have to create lists in almost every program they write. So the
@@ -349,11 +376,15 @@ effects. That is, under Perls that support it, the change in the
 behaviour of angle brackets is confined to the specific
 lexical scope into which the module was imported.
 
+Under Perl 5.8 and earlier, loading the module changes the effect
+of C<< <...> >> and C<glob()> for the remainder of the current
+package in the current file.
+
 This means:
 
     # Code                  Under 5.8 or earlier    Under 5.10 or later
     ====================    ====================    ===================
-    @list = <1..10>;        generates list          normal glob()
+    @list = <1..10>;        normal glob()           normal glob()
     {
         use List::Maker;    installs in file        installs in block
         @list = <1..10>;    generates list          generates list

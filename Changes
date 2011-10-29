@@ -37,3 +37,8 @@ Revision history for List-Maker
 0.002_000  Thu Nov  4 06:27:15 2010
 
     * Added :pick and :roll post-selectors
+
+
+0.003_000  Sat Oct 29 11:59:25 2011
+
+    * Fixed core and overloading behaviour (thanks Father Chrysostomos)

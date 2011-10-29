@@ -25,4 +25,6 @@ t/xx.t
 t/scoped.t
 t/pick.t
 t/roll.t
+t/core.t
+t/core_global.t
 META.yml                                 Module meta-data (added by MakeMaker)
