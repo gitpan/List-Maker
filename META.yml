@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               List-Maker
-version:            0.003_000
+version:            0.005
 abstract:           Generate more sophisticated lists than just ..
 author:
     - Damian Conway <DCONWAY@CPAN.org>
@@ -13,12 +13,11 @@ build_requires:
 requires:
     File::Glob:  0
     Test::More:  0
-    version:     0
 no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.56
+generated_by:       ExtUtils::MakeMaker version 6.57_05
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4

@@ -1,6 +1,6 @@
 package List::Maker;
 
-our $VERSION = '0.003_000';
+our $VERSION = '0.005';
 
 use warnings;
 use strict;
@@ -10,7 +10,6 @@ use List::Util qw<shuffle sum>;
 # Handle contextual returns
 sub _context {
     # Return original list in list context...
-
     return @_ if (caller 1)[5];
 
     # Otherwise, Anglicize list...
@@ -36,7 +35,6 @@ my %selector_sub = (
         shift; return @_;
     },
 );
-
 # Regexes to parse the acceptable list syntaxes...
 my $NUM      = qr{\s* [+-]? \d+ (?:\.\d*)? \s* }xms;
 my $TO       = qr{\s* \.\. \s*}xms;
@@ -197,13 +195,15 @@ sub add_handler {
 }
 
 
+
+# This sub is used instead of globs the special behaviours...
 no warnings 'redefine';
 sub _glob_replacement {
     # Don't be magical in those files that haven't loaded the module...
     my ($package, $file, $scope_ref) = (caller 0)[0,1,10];
 
     # Check for lexical scoping (only works in 5.10 and later)...
-    my $in_scope = $] < 5.010 || $scope_ref && (caller 0)[10]->{'List::Maker::is_active'};
+    my $in_scope = $] < 5.010 || $scope_ref && $scope_ref->{'List::Maker::is_active'};
 
     # If not being magical...
     if (!$caller_expecting_special_behaviour{$package, $file} || !$in_scope ) {
@@ -211,8 +211,8 @@ sub _glob_replacement {
         goto &CORE::GLOBAL::glob if exists &CORE::GLOBAL::glob;
 
         # Otherwise, use the core glob behaviour...
-        use File::Glob;
-        goto &File::Glob::csh_glob;
+        use File::Glob 'csh_glob';
+        return &csh_glob;
     }
 
     # Otherwise, be magical...
@@ -315,7 +315,7 @@ List::Maker - Generate more sophisticated lists than just $a..$b
 
 =head1 VERSION
 
-This document describes List::Maker version 0.003_000
+This document describes List::Maker version 0.005
 
 
 =head1 SYNOPSIS

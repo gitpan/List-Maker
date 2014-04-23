@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use Carp;
 
-our $VERSION = '0.000_001';
+our $VERSION = '0.002';
 
 sub _regular_glob {
     my @data = <1..10>;

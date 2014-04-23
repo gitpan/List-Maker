@@ -11,7 +11,6 @@ WriteMakefile(
     PREREQ_PM => {
         'Test::More' => 0,
         'File::Glob' => 0,
-        'version'    => 0,
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'List-Maker-*' },
